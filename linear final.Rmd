@@ -1,0 +1,153 @@
+---
+title: "Linear Final"
+author: "Bowei Li"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r data prepartion, message=FALSE, warning=FALSE}
+#import data and load packages
+library(broom)
+library(car)
+library(tidyverse)
+library(tidycomm)
+library(MASS)
+
+data <- read.csv("PATH_W1.csv")
+
+# change type of data
+cate<-colnames(data)[-c(1,2,11,12,17)]
+for(x in cate){
+  data[,x]<-as.factor(data[,x])
+}
+```
+
+model 1
+```{r model1}
+#run analysis with categorical variables, people who never used tobacco, Male,Non-Hispanic White and age 12-14 would be the references groups.
+model_1<- lm(BMI~ Evertob+Old+relevel(Male,ref='1')+relevel(Race,ref='2'),data=data)
+summary(model_1)
+#see if residuals of the model follows normal distribution
+qqnorm(residuals(model_1), main = "")
+qqline(residuals(model_1), col = "red")
+```
+
+
+```{r data transformation}
+#using box-cox to transformation the model
+obj <- boxcox(model_1, plotit = TRUE) 
+obj$x[which.max(obj$y)] # calculate lambda ~-1 -> transform x to 1/x
+data[,"new_BMI"]<-1/data[,"BMI"]
+new_model_1<-lm(new_BMI~ Evertob+Old+relevel(Male,ref='1')+relevel(Race,ref='2'),data=data)
+#see if now residuals follow normal distribution
+qqnorm(residuals(new_model_1), main = "")
+qqline(residuals(new_model_1), col = "red") 
+#see if there is equal variance
+plot(fitted(new_model_1), residuals(new_model_1), xlab = "Fitted",
+ylab = "Residuals")
+abline (h=0, col = "red")
+
+summary(new_model_1)
+```
+model 2
+
+```{r model 2}
+#run analysis to see the interaction between ever tobacco use and gender
+model_2a<- lm(new_BMI~Evertob * relevel(Male, ref = "1") +
+                relevel(Race, ref = "2")+Old,data=data)
+summary(model_2a)
+```
+
+```{r}
+#run analysis to see the interaction between ever tobacco use and age
+model_2b<- lm(new_BMI~Evertob*Old + relevel(Male, ref = "1") +
+                relevel(Race, ref = "2"),data=data)
+summary(model_2b)
+
+```
+
+```{r}
+#run analysis to see the how other three variables Mental Health Internalizing symptom, Mental Health Externalizing symptom, and Grade would have impact on the model 2b which is the best model among the previous three models.
+model_3<- lm(new_BMI~Evertob*Old + relevel(Male, ref = "1") +
+                relevel(Race, ref = "2")+ MHint + MHext+ Grade ,data=data)
+summary(model_3)
+```
+
+```{r}
+rs<-summary(model_3)
+#check vif of model_3
+vif(model_3)
+
+#use residual-fitted plot to check if the model's residual follows normal distribution
+plot(fitted(model_3), residuals(model_3), xlab = "Fitted",
+ylab = "Residuals")
+abline (h=0, col = "red")
+qqnorm(residuals(model_3), main = "")
+qqline(residuals(model_3), col = "red")
+
+#check leverage points in model_3
+hatv<-hatvalues(model_3)
+hist (hatv, xlab = "Leverages", main = "")
+abline(v = 2 * mean(hatv), col="red") #found leverage points to the right of the red line
+
+```
+
+```{r table 1 and 3}
+#data table for each variable
+data_table<- data[,c("BMI","Evertob","Old","Male","MHint","MHext","Race","Grade")]
+summary(data_table)
+
+
+# continuous dep variabe with dichotomous ind dep, table 1
+data_table %>% t_test(Evertob)
+
+# continuous dep variabe with polytomous ind dep, one way anova post hoc test to see differences in BMI between ethnic groups.Table 3
+data_table %>% 
+  unianova(Race,post_hoc=TRUE)%>%
+  dplyr::select(Var, post_hoc) %>% 
+  tidyr::unnest(post_hoc)
+
+```
+
+```{r}
+# perform t-tests for each specific variables
+t.test(data$BMI ~ data$Old)
+t.test(data$BMI ~ data$MHint)
+t.test(data$BMI ~ data$MHext)
+t.test(data$BMI ~ data$Male)
+t.test(data$BMI ~ data$Evertob)
+t.test(data$BMI ~ data$Grade)
+
+
+```
+
+```{r}
+#calculate ANOVA for the four models
+anova(new_model_1,model_2a,model_2b,model_3)
+```
+
+```{r}
+
+# calculate AIC and BIC for each model
+model_1_AIC <- AIC(new_model_1)
+model_1_BIC <- BIC(new_model_1)
+
+model_2a_AIC <- AIC(model_2a)
+model_2a_BIC <- BIC(model_2a)
+
+model_2b_AIC <- AIC(model_2b)
+model_2b_BIC <- BIC(model_2b)
+
+model_3_AIC <- AIC(model_3)
+model_3_BIC <- BIC(model_3)
+
+#Present the result in a data frame
+results_df <- data.frame(
+  Model = c("Model 1", "Model 2a", "Model 2b", "Model 3"),
+  AIC = c(model_1_AIC, model_2a_AIC, model_2b_AIC, model_3_AIC),
+  BIC = c(model_1_BIC, model_2b_BIC, model_2b_BIC, model_3_BIC)
+)
+results_df
+```
